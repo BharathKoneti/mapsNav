@@ -1,0 +1,16 @@
+Index: app/src/main/java/teamtreehouse/com/iamhere/MapsActivity.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- app/src/main/java/teamtreehouse/com/iamhere/MapsActivity.java	(revision 750d35cb1e1854d91ced7146b0fa0d1e4be7a0db)
++++ app/src/main/java/teamtreehouse/com/iamhere/MapsActivity.java	(revision )
+@@ -72,7 +72,7 @@
+             mGoogleApiClient.disconnect();
+         }
+     }
+-
++    //Test
+     /**
+      * Sets up the map if it is possible to do so (i.e., the Google Play services APK is correctly
+      * installed) and the map has not already been instantiated.. This will ensure that we only ever
