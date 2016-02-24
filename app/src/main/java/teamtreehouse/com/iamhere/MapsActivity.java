@@ -1,7 +1,10 @@
 package teamtreehouse.com.iamhere;
 
 import android.content.IntentSender;
+import android.graphics.Color;
+import android.location.Geocoder;
 import android.location.Location;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v4.app.FragmentActivity;
 import android.util.Log;
@@ -17,7 +20,16 @@ import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.PolylineOptions;
+
+import org.apache.http.HttpConnection;
+import org.json.JSONObject;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 
 public class MapsActivity extends FragmentActivity implements
         GoogleApiClient.ConnectionCallbacks,
@@ -36,6 +48,13 @@ public class MapsActivity extends FragmentActivity implements
 
     private GoogleApiClient mGoogleApiClient;
     private LocationRequest mLocationRequest;
+
+    private LatLng latLng;
+    public LatLng sourceLatLng;
+    public LatLng destLatLng;
+    private Marker mainMarker;
+    private Marker marker;
+    Geocoder geocoder;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -73,21 +92,6 @@ public class MapsActivity extends FragmentActivity implements
         }
     }
 
-    /**
-     * Sets up the map if it is possible to do so (i.e., the Google Play services APK is correctly
-     * installed) and the map has not already been instantiated.. This will ensure that we only ever
-     * call {@link #setUpMap()} once when {@link #mMap} is not null.
-     * <p/>
-     * If it isn't installed {@link SupportMapFragment} (and
-     * {@link com.google.android.gms.maps.MapView MapView}) will show a prompt for the user to
-     * install/update the Google Play services APK on their device.
-     * <p/>
-     * A user can return to this FragmentActivity after following the prompt and correctly
-     * installing/updating/enabling the Google Play services. Since the FragmentActivity may not
-     * have been completely destroyed during this process (it is likely that it would only be
-     * stopped or paused), {@link #onCreate(Bundle)} may not be called again so we should call this
-     * method in {@link #onResume()} to guarantee that it will be called.
-     */
     private void setUpMapIfNeeded() {
         // Do a null check to confirm that we have not already instantiated the map.
         if (mMap == null) {
@@ -110,26 +114,176 @@ public class MapsActivity extends FragmentActivity implements
     private void setUpMap() {
         mMap.addMarker(new MarkerOptions().position(new LatLng(0, 0)).title("Marker"));
         //mMap.moveCamera(CameraUpdateFactory.newLatLng(LatLng));
+
+        mMap.setOnMapClickListener(new GoogleMap.OnMapClickListener() {
+
+            @Override
+            public void onMapClick(LatLng point) {
+                //save current location
+                latLng = point;
+
+                //remove previously placed Marker
+                if (marker != null) {
+                    marker.remove();
+                }
+
+                LatLng latLng1  = new LatLng(point.latitude,point.longitude);
+                destLatLng = latLng1;
+                //mMap.addMarker(new MarkerOptions().position(new LatLng(currentLatitude, currentLongitude)).title("Current Location"));
+                MarkerOptions options1 = new MarkerOptions()
+                        .position(latLng1)
+                        .title("Destination");
+                marker = mMap.addMarker(options1
+                        .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE)));
+
+
+                MarkerOptions options = new MarkerOptions();
+                options.position(sourceLatLng);
+                options.position(destLatLng);
+                mMap.addMarker(options);
+                String url = getMapsApiDirectionsUrl();
+                ReadTask downloadTask = new ReadTask();
+                downloadTask.execute(url);
+
+
+               /* List<Address> addresses = new ArrayList<>();
+                try {
+                    addresses = geocoder.getFromLocation(point.latitude, point.longitude,1);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+
+                android.location.Address address = addresses.get(0);
+
+                if (address != null) {
+                    StringBuilder sb = new StringBuilder();
+                    for (int i = 0; i < address.getMaxAddressLineIndex(); i++){
+                        sb.append(address.getAddressLine(i) + "\n");
+                    }
+                    //Toast.makeText(MapsActivity.this, sb.toString(), Toast.LENGTH_LONG).show();
+                }
+
+                //remove previously placed Marker
+                if (marker != null) {
+                    marker.remove();
+                }
+
+                //place marker where user just clicked
+                marker = mMap.addMarker(new MarkerOptions().position(point).title("Marker")
+                        .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_MAGENTA)));*/
+
+            }
+        });
     }
 
-    private void handleNewLocation(Location location) {
+
+
+    private String getMapsApiDirectionsUrl() {
+        String waypoints = "origin=" + sourceLatLng.latitude + "," + sourceLatLng.longitude
+                + "&destination=" + destLatLng.latitude + "," + destLatLng.longitude
+                + "&waypoints=optimize:true|"
+                + sourceLatLng.latitude + "," + sourceLatLng.longitude
+                + "|" + destLatLng.latitude + "," + destLatLng.longitude;
+
+        String sensor = "sensor=false";
+        String params = waypoints + "&" + sensor;
+        String output = "json";
+        String url = "https://maps.googleapis.com/maps/api/directions/"
+                + output + "?" + params;
+        return url;
+    }
+
+    private class ReadTask extends AsyncTask<String, Void, String> {
+        @Override
+        protected String doInBackground(String... url) {
+            String data = "";
+            try {
+                HttpConnectionMap http = new HttpConnectionMap();
+                data = http.readUrl(url[0]);
+            } catch (Exception e) {
+                Log.d("Background Task", e.toString());
+            }
+            return data;
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+            super.onPostExecute(result);
+            new ParserTask().execute(result);
+        }
+    }
+
+    private class ParserTask extends
+            AsyncTask<String, Integer, List<List<HashMap<String, String>>>> {
+
+        @Override
+        protected List<List<HashMap<String, String>>> doInBackground(
+                String... jsonData) {
+
+            JSONObject jObject;
+            List<List<HashMap<String, String>>> routes = null;
+
+            try {
+                jObject = new JSONObject(jsonData[0]);
+                PathJSONParser parser = new PathJSONParser();
+                routes = parser.parse(jObject);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            return routes;
+        }
+
+        @Override
+        protected void onPostExecute(List<List<HashMap<String, String>>> routes) {
+            ArrayList<LatLng> points = null;
+            PolylineOptions polyLineOptions = null;
+
+            // traversing through routes
+            for (int i = 0; i < routes.size(); i++) {
+                points = new ArrayList<LatLng>();
+                polyLineOptions = new PolylineOptions();
+                List<HashMap<String, String>> path = routes.get(i);
+
+                for (int j = 0; j < path.size(); j++) {
+                    HashMap<String, String> point = path.get(j);
+
+                    double lat = Double.parseDouble(point.get("lat"));
+                    double lng = Double.parseDouble(point.get("lng"));
+                    LatLng position = new LatLng(lat, lng);
+
+                    points.add(position);
+                }
+
+                polyLineOptions.addAll(points);
+                polyLineOptions.width(2);
+                polyLineOptions.color(Color.BLUE);
+            }
+
+            mMap.addPolyline(polyLineOptions);
+        }
+    }
+
+     private void handleNewLocation(Location location) {
         Log.d(TAG, location.toString());
 
         double currentLatitude = location.getLatitude();
         double currentLongitude = location.getLongitude();
 
         LatLng latLng = new LatLng(currentLatitude, currentLongitude);
+        sourceLatLng = latLng;
 
         //mMap.addMarker(new MarkerOptions().position(new LatLng(currentLatitude, currentLongitude)).title("Current Location"));
         MarkerOptions options = new MarkerOptions()
                 .position(latLng)
-                .title("I am here!");
-        mMap.addMarker(options
+                .title("This is me!");
+        mainMarker = mMap.addMarker(options
         .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)));
         mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
         CameraUpdate zoom=CameraUpdateFactory.zoomTo(12);
         mMap.animateCamera(zoom);
 
+
+/*
         LatLng latLng1  = new LatLng(currentLatitude+0.025, currentLongitude+0.005);
         //mMap.addMarker(new MarkerOptions().position(new LatLng(currentLatitude, currentLongitude)).title("Current Location"));
         MarkerOptions options1 = new MarkerOptions()
@@ -155,6 +309,7 @@ public class MapsActivity extends FragmentActivity implements
                 .title("1 BHK");
         mMap.addMarker(options3
                 .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)));
+*/
     }
 
     @Override
@@ -206,4 +361,5 @@ public class MapsActivity extends FragmentActivity implements
     public void onLocationChanged(Location location) {
         handleNewLocation(location);
     }
+
 }
